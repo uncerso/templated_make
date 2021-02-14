@@ -47,7 +47,8 @@ class RuleGenerator {
     Vars const & vars;
     Rule const & rule;
     string & phony;
-    string current_str;
+    string current_rule_header;
+    string current_content_line;
     TagState tag_state;
 public:
     list<string> output;
@@ -60,40 +61,47 @@ public:
         CheckAllTagConsistency();
     }
 
+    void GenPhony() {
+    }
+
     void Gen() {
+        assert(current_rule_header.empty());
+        current_rule_header += '\n';
         GenNames();
+        current_rule_header.pop_back();
+        assert(current_rule_header.empty());
     }
 
 private:
-    inline void RecursiveCall(Node const & node, size_t pos, function<void(size_t)> f) {
+    inline void RecursiveCall(string & buf, Node const & node, size_t pos, function<void(size_t)> f) {
         if (!node.is_var) {
-            current_str += node.s;
+            buf += node.s;
             f(pos + 1);
-            Pop(current_str, node.s.size());
+            Pop(buf, node.s.size());
             return;
         }
         auto const & values = vars.find(node.s)->second;
         if (node.tag.empty()) {
             for (auto const & s : values) {
-                current_str += s;
+                buf += s;
                 f(pos + 1);
-                Pop(current_str, s.size());
+                Pop(buf, s.size());
             }
             return;
         }
 
         auto tag = tag_state.find(node.tag);
         if (tag != tag_state.end()) {
-            current_str += values[tag->second];
+            buf += values[tag->second];
             f(pos + 1);
-            Pop(current_str, values[tag->second].size());
+            Pop(buf, values[tag->second].size());
             return;
         }
         auto new_tag = tag_state.emplace_hint(tag, node.tag, 0);
         for (auto const & s : values) {
-            current_str += s;
+            buf += s;
             f(pos + 1);
-            Pop(current_str, s.size());
+            Pop(buf, s.size());
             ++new_tag->second;
         }
         tag_state.erase(new_tag);
@@ -102,47 +110,47 @@ private:
     void GenNames(size_t pos = 0) {
         if (pos == rule.name.size()) {
             phony += ' ';
-            phony += current_str;
-            current_str += ':';
+            phony += current_rule_header.substr(1);
+            current_rule_header += ':';
             GenDeps();
-            current_str.pop_back();
+            current_rule_header.pop_back();
             return;
         }
-        RecursiveCall(rule.name[pos], pos, [this](size_t pos) {GenNames(pos);});
+        RecursiveCall(current_rule_header, rule.name[pos], pos, [this](size_t pos) {GenNames(pos);});
     }
 
-    void GenDeps(size_t dep_pos = 0, size_t pos = 0) {
-        if (dep_pos == rule.dependencies.size()) {
-            current_str.push_back('\n');
-            GenContent();
-            current_str.pop_back();
+    void GenDeps() {
+        auto rule_header_size_without_deps = current_rule_header.size();
+        current_content_line += ' ';
+        for (size_t i = 0; i < rule.dependencies.size(); ++i)
+            GenSingleDep(i);
+        current_content_line.pop_back();
+        output.push_back(current_rule_header);
+        GenContent();
+        current_rule_header.resize(rule_header_size_without_deps);
+    }
+
+    void GenSingleDep(size_t dep_pos, size_t pos = 0) {
+        if (pos == rule.dependencies[dep_pos].size()) {
+            current_rule_header += current_content_line;
             return;
         }
-        if (pos == rule.dependencies[dep_pos].size())
-            return GenDeps(dep_pos + 1);
-        if (pos == 0)
-            current_str += ' ';
-
         auto & dep = rule.dependencies[dep_pos][pos];
-        RecursiveCall(dep, pos, [this, dep_pos](size_t pos) {GenDeps(dep_pos, pos);});
-
-        if (pos == 0)
-            current_str.pop_back();
+        RecursiveCall(current_content_line, dep, pos, [this, dep_pos](size_t pos) {GenSingleDep(dep_pos, pos);});
     }
 
-    void GenContent(size_t line_pos = 0, size_t pos = 0) {
-        if (line_pos == rule.content.size())
-            return output.push_back(current_str);
+    void GenContent() {
+        current_content_line += '\t';
+        for (size_t i = 0; i < rule.content.size(); ++i)
+            GenSingleCmd(i);
+        current_content_line.pop_back();
+    }
+
+    void GenSingleCmd(size_t line_pos, size_t pos = 0) {
         if (pos == rule.content[line_pos].size())
-            return GenContent(line_pos + 1);
-        if (pos == 0)
-            current_str += '\t';
-
+            return output.push_back(current_content_line);
         auto & line = rule.content[line_pos][pos];
-        RecursiveCall(line, pos, [this, line_pos](size_t pos) {GenContent(line_pos, pos);});
-
-        if (pos == 0)
-            current_str.pop_back();
+        RecursiveCall(current_content_line, line, pos, [this, line_pos](size_t pos) {GenSingleCmd(line_pos, pos);});
     }
 
     void CheckAllVarAreDefined() const {
@@ -199,7 +207,6 @@ list<string> Generate(Vars const & vars, Rules const & rules) {
         RuleGenerator rg(vars, rule, phony);
         rg.Gen();
         res.splice(res.end(), rg.output);
-        // res.push_back("\n\n==================================\n\n");
     }
     res.push_front(move(phony));
     return res;
