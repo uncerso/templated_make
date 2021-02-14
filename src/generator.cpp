@@ -46,22 +46,21 @@ class RuleGenerator {
     using TagState = unordered_map<string, size_t>;
     Vars const & vars;
     Rule const & rule;
-    string & phony;
     string current_rule_header;
     string current_content_line;
     TagState tag_state;
 public:
     list<string> output;
 
-    RuleGenerator(Vars const & vars, Rule const & rule, string & phony)
+    RuleGenerator(Vars const & vars, Rule const & rule)
         : vars(vars)
         , rule(rule)
-        , phony(phony)
     {
         CheckAllTagConsistency();
     }
 
-    void GenPhony() {
+    void AppendPhony(string & phony) {
+        GenNamesForPhony(phony);
     }
 
     void Gen() {
@@ -73,7 +72,7 @@ public:
     }
 
 private:
-    inline void RecursiveCall(string & buf, Node const & node, size_t pos, function<void(size_t)> f) {
+    void RecursiveCall(string & buf, Node const & node, size_t pos, function<void(size_t)> f) {
         if (!node.is_var) {
             buf += node.s;
             f(pos + 1);
@@ -107,10 +106,17 @@ private:
         tag_state.erase(new_tag);
     }
 
-    void GenNames(size_t pos = 0) {
+    void GenNamesForPhony(string & phony, size_t pos = 0) {
         if (pos == rule.name.size()) {
             phony += ' ';
-            phony += current_rule_header.substr(1);
+            phony += current_rule_header;
+            return;
+        }
+        RecursiveCall(current_rule_header, rule.name[pos], pos, [this, &phony](size_t pos) {GenNamesForPhony(phony, pos);});
+    }
+
+    void GenNames(size_t pos = 0) {
+        if (pos == rule.name.size()) {
             current_rule_header += ':';
             GenDeps();
             current_rule_header.pop_back();
@@ -202,12 +208,17 @@ private:
 list<string> Generate(Vars const & vars, Rules const & rules) {
     list<string> res;
     string phony = ".PHONY:";
-    // TODO: 1) gen phony; 2) output to a stream instead of list<string>
+    // TODO: 1) output to a stream instead of list<string>
     for (auto const & rule : rules) {
-        RuleGenerator rg(vars, rule, phony);
+        RuleGenerator rg(vars, rule);
+        rg.AppendPhony(phony);
+    }
+    res.push_back(move(phony));
+
+    for (auto const & rule : rules) {
+        RuleGenerator rg(vars, rule);
         rg.Gen();
         res.splice(res.end(), rg.output);
     }
-    res.push_front(move(phony));
     return res;
 }
