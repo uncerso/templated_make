@@ -20,12 +20,12 @@ int main([[maybe_unused]] int argc, [[maybe_unused]] char const *argv[]) {
     try {
         auto file = Parse(inp);
         SetEmptyValueInsteadOfNothing(file.first);
-        for (auto const & t : file.first)
-            std::cout << t << '\n';
-        for (auto const & t : file.second)
-            std::cout << t << '\n';
+        // for (auto const & t : file.first)
+        //     std::cout << t << '\n';
+        // for (auto const & t : file.second)
+        //     std::cout << t << '\n';
 
-        std::cout << "\n==============================\n\n";
+        // std::cout << "\n==============================\n\n";
 
         // Generate(std::cout, file.first, file.second);
         auto generated_list = Generate(file.first, file.second);
